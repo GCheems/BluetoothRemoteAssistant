@@ -34,10 +34,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val deviceHistoryRepository = DeviceHistoryRepository.getInstance(application)
     
     init {
-        // 加载自定义按键
-        loadCustomButtons()
-        // 监听连接状态，当连接成功时保存设备到历史
-        monitorConnectionState()
+        // 自定义按键从 DataStore 自动加载，无需手动初始化
     }
 
     // 扫描到的设备列表
@@ -131,6 +128,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun connectDevice(device: BleDevice) {
         viewModelScope.launch {
             bleManager.connect(device)
+            // 保存到历史记录
+            deviceHistoryRepository.addDevice(device)
         }
     }
 
@@ -205,27 +204,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
 
-    /**
-     * 加载自定义按键
-     */
-    private fun loadCustomButtons() {
-        // customButtons 现在直接从 repository 的 Flow 获取，不需要手动加载
-    }
-    
-    /**
-     * 监听连接状态，当连接成功时保存设备到历史
-     */
-    private fun monitorConnectionState() {
-        viewModelScope.launch {
-            connectionState.collect { state ->
-                if (state == ConnectionState.CONNECTED) {
-                    connectedDevice.value?.let { device ->
-                        deviceHistoryRepository.addDevice(device)
-                    }
-                }
-            }
-        }
-    }
+
 
     /**
      * 添加自定义按键
