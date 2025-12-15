@@ -184,6 +184,16 @@ fun MainNavigation(
     ) {
         // 扫描页面
         composable("scan") {
+            // 生命周期感知，页面销毁时停止扫描
+            DisposableEffect(Unit) {
+                onDispose {
+                    if (isScanning) {
+                        viewModel.stopScan()
+                        isScanning = false
+                    }
+                }
+            }
+            
             ScanScreen(
                 devices = devices,
                 isScanning = isScanning,
@@ -272,8 +282,12 @@ fun MainNavigation(
         }
     }
 
-    // 监听扫描状态
-    LaunchedEffect(devices) {
-        // 如果扫描中且有设备，保持扫描状态
+    // 监听扫描状态和连接状态
+    LaunchedEffect(connectionState) {
+        // 如果连接成功，自动停止扫描
+        if (connectionState == ConnectionState.CONNECTED && isScanning) {
+            viewModel.stopScan()
+            isScanning = false
+        }
     }
 }

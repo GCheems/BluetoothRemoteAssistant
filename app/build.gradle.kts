@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.20"
 }
 
 android {
@@ -84,6 +85,12 @@ dependencies {
     
     // Permissions handling (Accompanist)
     implementation("com.google.accompanist:accompanist-permissions:0.32.0")
+    
+    // DataStore for data persistence
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+    
+    // Kotlin Serialization for JSON
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
     
     // Testing
     testImplementation("junit:junit:4.13.2")

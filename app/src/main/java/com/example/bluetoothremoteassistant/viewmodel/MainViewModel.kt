@@ -10,6 +10,8 @@ import com.example.bluetoothremoteassistant.data.model.ConnectionState
 import com.example.bluetoothremoteassistant.data.model.ControlCommand
 import com.example.bluetoothremoteassistant.data.model.ControlMode
 import com.example.bluetoothremoteassistant.data.model.CustomButton
+import com.example.bluetoothremoteassistant.data.repository.CustomButtonRepository
+import com.example.bluetoothremoteassistant.data.repository.DeviceHistoryRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +28,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // 蓝牙管理器实例
     private val bleManager = BluetoothLeManager.getInstance(application)
+    
+    // 数据仓库实例
+    private val customButtonRepository = CustomButtonRepository.getInstance(application)
+    private val deviceHistoryRepository = DeviceHistoryRepository.getInstance(application)
+    
+    init {
+        // 加载自定义按键
+        loadCustomButtons()
+        // 监听连接状态，当连接成功时保存设备到历史
+        monitorConnectionState()
+    }
 
     // 扫描到的设备列表
     val scannedDevices: StateFlow<List<BleDevice>> = bleManager.scannedDevices
@@ -71,9 +84,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _controlMode = MutableStateFlow(ControlMode.STANDARD)
     val controlMode: StateFlow<ControlMode> = _controlMode.asStateFlow()
 
-    // 自定义按键列表
-    private val _customButtons = MutableStateFlow<List<CustomButton>>(emptyList())
-    val customButtons: StateFlow<List<CustomButton>> = _customButtons.asStateFlow()
+    // 自定义按键列表（从持久化存储加载）
+    val customButtons: StateFlow<List<CustomButton>> = customButtonRepository.customButtons
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+    
+    // 错误消息状态
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     // 自定义服务和特征值缓存（用于快速发送遥控指令）
     private var cachedCustomServiceUuid: UUID? = null
@@ -185,21 +206,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
 
     /**
+     * 加载自定义按键
+     */
+    private fun loadCustomButtons() {
+        // customButtons 现在直接从 repository 的 Flow 获取，不需要手动加载
+    }
+    
+    /**
+     * 监听连接状态，当连接成功时保存设备到历史
+     */
+    private fun monitorConnectionState() {
+        viewModelScope.launch {
+            connectionState.collect { state ->
+                if (state == ConnectionState.CONNECTED) {
+                    connectedDevice.value?.let { device ->
+                        deviceHistoryRepository.addDevice(device)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * 添加自定义按键
      */
     fun addCustomButton(button: CustomButton) {
-        val currentList = _customButtons.value.toMutableList()
-        currentList.add(button)
-        _customButtons.value = currentList
+        viewModelScope.launch {
+            customButtonRepository.addButton(button)
+        }
     }
 
     /**
      * 删除自定义按键
      */
     fun removeCustomButton(button: CustomButton) {
-        val currentList = _customButtons.value.toMutableList()
-        currentList.remove(button)
-        _customButtons.value = currentList
+        viewModelScope.launch {
+            customButtonRepository.removeButton(button)
+        }
     }
 
     /**

@@ -8,15 +8,22 @@ import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.example.bluetoothremoteassistant.data.model.BleCharacteristic
 import com.example.bluetoothremoteassistant.data.model.BleDevice
+import com.example.bluetoothremoteassistant.data.model.BleError
+import com.example.bluetoothremoteassistant.data.model.BleResult
 import com.example.bluetoothremoteassistant.data.model.BleService
 import com.example.bluetoothremoteassistant.data.model.ConnectionState
+import com.example.bluetoothremoteassistant.util.Constants
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.*
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * 蓝牙 LE 管理器 - 单例类
@@ -26,7 +33,6 @@ class BluetoothLeManager private constructor(private val context: Context) {
 
     companion object {
         private const val TAG = "BluetoothLeManager"
-        private const val CLIENT_CHARACTERISTIC_CONFIG_UUID = "00002902-0000-1000-8000-00805f9b34fb"
         
         // 自定义服务 UUID（ESP32常用）
         const val CUSTOM_SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
@@ -57,6 +63,13 @@ class BluetoothLeManager private constructor(private val context: Context) {
 
     // GATT 连接对象
     private var bluetoothGatt: BluetoothGatt? = null
+    
+    // GATT 操作互斥锁，防止并发操作冲突
+    private val gattLock = ReentrantLock()
+    
+    // 连接超时处理器
+    private val handler = Handler(Looper.getMainLooper())
+    private var connectionTimeoutRunnable: Runnable? = null
 
     // 扫描到的设备列表
     private val _scannedDevices = MutableStateFlow<List<BleDevice>>(emptyList())
@@ -133,6 +146,12 @@ class BluetoothLeManager private constructor(private val context: Context) {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             super.onConnectionStateChange(gatt, status, newState)
+            
+            // 取消超时任务
+            connectionTimeoutRunnable?.let {
+                handler.removeCallbacks(it)
+                connectionTimeoutRunnable = null
+            }
             
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
@@ -326,6 +345,16 @@ class BluetoothLeManager private constructor(private val context: Context) {
 
         val bluetoothDevice = bluetoothAdapter?.getRemoteDevice(device.address)
         bluetoothGatt = bluetoothDevice?.connectGatt(context, false, gattCallback)
+        
+        // 设置连接超时
+        connectionTimeoutRunnable = Runnable {
+            if (_connectionState.value == ConnectionState.CONNECTING) {
+                Log.e(TAG, "连接超时")
+                addLog("连接超时，请重试")
+                disconnect()
+            }
+        }
+        handler.postDelayed(connectionTimeoutRunnable!!, Constants.CONNECTION_TIMEOUT_MS)
     }
 
     /**
@@ -333,6 +362,12 @@ class BluetoothLeManager private constructor(private val context: Context) {
      */
     @SuppressLint("MissingPermission")
     fun disconnect() {
+        // 取消超时任务
+        connectionTimeoutRunnable?.let {
+            handler.removeCallbacks(it)
+            connectionTimeoutRunnable = null
+        }
+        
         bluetoothGatt?.let { gatt ->
             gatt.disconnect()
             gatt.close()
@@ -392,7 +427,7 @@ class BluetoothLeManager private constructor(private val context: Context) {
         bluetoothGatt?.setCharacteristicNotification(characteristic, enable) ?: return false
 
         // 写入描述符以启用远程通知
-        val descriptor = characteristic.getDescriptor(UUID.fromString(CLIENT_CHARACTERISTIC_CONFIG_UUID))
+        val descriptor = characteristic.getDescriptor(Constants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
         if (descriptor != null) {
             val value = if (enable) {
                 BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
@@ -415,11 +450,24 @@ class BluetoothLeManager private constructor(private val context: Context) {
 
     /**
      * 添加日志
+     * 限制最大日志数量，超过时删除最旧的日志
      */
     private fun addLog(message: String) {
-        val timestamp = java.text.SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+        val timestamp = java.text.SimpleDateFormat(
+            Constants.LOG_TIMESTAMP_FORMAT,
+            Locale.getDefault()
+        ).format(Date())
         val logMessage = "[$timestamp] $message"
-        _dataLogs.value = _dataLogs.value + logMessage
+        
+        val currentLogs = _dataLogs.value.toMutableList()
+        currentLogs.add(logMessage)
+        
+        // 限制日志数量
+        if (currentLogs.size > Constants.MAX_LOG_COUNT) {
+            _dataLogs.value = currentLogs.takeLast(Constants.MAX_LOG_COUNT)
+        } else {
+            _dataLogs.value = currentLogs
+        }
     }
 
     /**
