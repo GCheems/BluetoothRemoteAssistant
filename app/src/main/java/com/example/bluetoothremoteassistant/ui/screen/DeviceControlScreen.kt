@@ -1,9 +1,11 @@
 package com.example.bluetoothremoteassistant.ui.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -11,6 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.bluetoothremoteassistant.data.BluetoothLeManager
 import com.example.bluetoothremoteassistant.data.model.BleDevice
@@ -349,14 +353,22 @@ private fun ConnectionStatusCard(
     connectionState: ConnectionState,
     modifier: Modifier = Modifier
 ) {
+    val containerColor = when (connectionState) {
+        ConnectionState.CONNECTED -> ConnectedGreen.copy(alpha = 0.15f)
+        ConnectionState.CONNECTING -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+        else -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+    }
+
+    val contentColor = when (connectionState) {
+        ConnectionState.CONNECTED -> MaterialTheme.colorScheme.onSurface
+        ConnectionState.CONNECTING -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onErrorContainer
+    }
+
     Card(
         modifier = modifier,
-        colors = CardDefaults.cardColors(
-            containerColor = when (connectionState) {
-                ConnectionState.CONNECTED -> ConnectedGreen.copy(alpha = 0.1f)
-                else -> DisconnectedGray.copy(alpha = 0.1f)
-            }
-        )
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        shape = MaterialTheme.shapes.medium
     ) {
         Row(
             modifier = Modifier
@@ -364,35 +376,55 @@ private fun ConnectionStatusCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = when (connectionState) {
-                    ConnectionState.CONNECTED -> Icons.Default.CheckCircle
-                    ConnectionState.CONNECTING -> Icons.Default.HourglassEmpty
-                    else -> Icons.Default.Cancel
-                },
-                contentDescription = null,
-                tint = when (connectionState) {
-                    ConnectionState.CONNECTED -> ConnectedGreen
-                    else -> DisconnectedGray
-                },
-                modifier = Modifier.size(32.dp)
-            )
+            // 状态图标背景
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = when (connectionState) {
+                        ConnectionState.CONNECTED -> Icons.Default.CheckCircle
+                        ConnectionState.CONNECTING -> Icons.Default.HourglassEmpty
+                        else -> Icons.Default.Cancel
+                    },
+                    contentDescription = null,
+                    tint = when (connectionState) {
+                        ConnectionState.CONNECTED -> ConnectedGreen
+                        ConnectionState.CONNECTING -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.error
+                    },
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+            
             Spacer(modifier = Modifier.width(16.dp))
+            
             Column {
                 Text(
                     text = when (connectionState) {
-                        ConnectionState.CONNECTED -> "已连接"
-                        ConnectionState.CONNECTING -> "连接中..."
-                        ConnectionState.DISCONNECTING -> "断开中..."
-                        ConnectionState.DISCONNECTED -> "已断开"
+                        ConnectionState.CONNECTED -> "设备已连接"
+                        ConnectionState.CONNECTING -> "正在连接..."
+                        ConnectionState.DISCONNECTING -> "正在断开..."
+                        ConnectionState.DISCONNECTED -> "设备已断开"
                     },
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = contentColor
                 )
                 if (connectionState == ConnectionState.CONNECTED) {
                     Text(
-                        text = "可以开始操作特征值",
+                        text = "一切就绪，可以进行操作",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = contentColor.copy(alpha = 0.8f)
+                    )
+                } else if (connectionState == ConnectionState.DISCONNECTED) {
+                    Text(
+                        text = "请返回重新扫描连接",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor.copy(alpha = 0.8f)
                     )
                 }
             }
